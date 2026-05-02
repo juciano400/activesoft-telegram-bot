@@ -4,22 +4,29 @@ from telebot import TeleBot, types
 from datetime import datetime
 from bs4 import BeautifulSoup
 import json
+import threading
+from flask import Flask
 
-# --- DIAGNÓSTICO DE INICIALIZAÇÃO ---
+# --- CONFIGURAÇÃO DO SERVIDOR WEB PARA O RENDER ---
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return "Bot is running!", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+# --- CONFIGURAÇÕES DE SEGURANÇA ---
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
-print("--- DIAGNÓSTICO DO SISTEMA ---")
-print(f"TELEGRAM_TOKEN encontrado: {'SIM' if TOKEN else 'NÃO'}")
-if TOKEN: print(f"Início do Token: {TOKEN[:10]}...")
-print(f"GEMINI_API_KEY encontrada: {'SIM' if GEMINI_API_KEY else 'NÃO'}")
-if GEMINI_API_KEY: print(f"Início da Chave: {GEMINI_API_KEY[:10]}...")
-print("------------------------------")
+print("--- DIAGNÓSTICO DO SISTEMA v8.4 ---")
+print(f"TELEGRAM_TOKEN: {'OK' if TOKEN else 'FALTANDO'}")
+print(f"GEMINI_API_KEY: {'OK' if GEMINI_API_KEY else 'FALTANDO'}")
 
-# Inicialização do Bot
 bot = TeleBot(TOKEN) if TOKEN else None
-
-# Configuração Gemini Estável
 GEMINI_MODEL = "gemini-1.5-flash"
 
 # Configurações Activesoft
@@ -64,29 +71,25 @@ def get_session():
         return None
 
 def call_gemini(prompt, chat_id=None):
-    if not GEMINI_API_KEY:
-        if chat_id: bot.send_message(chat_id, "⚠️ GEMINI_API_KEY não configurada no Render.")
-        return None
+    if not GEMINI_API_KEY: return None
     url = f"https://generativelanguage.googleapis.com/v1/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-    headers = {'Content-Type': 'application/json'}
     payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"response_mime_type": "application/json"}}
     try:
-        res = requests.post(url, headers=headers, json=payload, timeout=25)
+        res = requests.post(url, json=payload, timeout=25)
         res_json = res.json()
         if 'candidates' in res_json:
             return res_json['candidates'][0]['content']['parts'][0]['text']
         else:
-            error_msg = res_json.get('error', {}).get('message', 'Erro desconhecido')
-            if chat_id: bot.send_message(chat_id, f"❌ Erro na IA: {error_msg}")
+            if chat_id: bot.send_message(chat_id, f"❌ Erro na IA: {res_json.get('error', {}).get('message', 'Erro')}")
             return None
     except Exception as e:
-        if chat_id: bot.send_message(chat_id, f"❌ Erro técnico: {str(e)}")
+        if chat_id: bot.send_message(chat_id, f"❌ Erro técnico IA: {str(e)}")
         return None
 
 if bot:
     @bot.message_handler(commands=['start'])
     def start_cmd(message):
-        bot.send_message(message.chat.id, "👋 Professor Juciano! Versão 8.3 (Diagnóstico) Ativa.\n\n"
+        bot.send_message(message.chat.id, "👋 Professor Juciano! Versão 8.4 Online.\n\n"
                                          "Mande sua aula ou use /registrar.")
 
     @bot.message_handler(commands=['registrar'])
@@ -193,7 +196,10 @@ if bot:
         except Exception as e: bot.send_message(chat_id, f"❌ Erro: {str(e)}")
         user_state.pop(chat_id, None)
 
-    print("Bot Iniciado e pronto para Polling!")
+    # Iniciar Flask em uma thread separada
+    threading.Thread(target=run_flask).start()
+    
+    print("Bot e Servidor Flask Iniciados!")
     bot.infinity_polling()
 else:
-    print("ERRO: O Bot não pôde ser iniciado porque o TOKEN está vazio.")
+    print("ERRO: TOKEN não encontrado.")
