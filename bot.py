@@ -7,12 +7,18 @@ import urllib.parse
 import json
 import time
 
-# Configurações do Bot Telegram via Variáveis de Ambiente
-TOKEN = os.getenv('TELEGRAM_TOKEN', '8369730656:AAFeb_zRAm6FUNg0CS3tYkDSLixWUrzWB6Y')
-bot = TeleBot(TOKEN)
+# --- CONFIGURAÇÕES DE SEGURANÇA ---
+# As chaves DEVEM ser configuradas no painel do Render (Environment Variables)
+TOKEN = os.getenv('TELEGRAM_TOKEN')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
-# Configuração Gemini via Variáveis de Ambiente
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AIzaSyDRbL1JXrjGWTNq7DoPwOzRKZopYBihD1g')
+if not TOKEN or not GEMINI_API_KEY:
+    print("ERRO CRÍTICO: Variáveis de ambiente TELEGRAM_TOKEN ou GEMINI_API_KEY não configuradas!")
+    # O bot não iniciará sem as chaves para evitar erros silenciosos
+
+bot = TeleBot(TOKEN) if TOKEN else None
+
+# Configuração Gemini
 GEMINI_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro"]
 
 # Configurações Activesoft
@@ -59,12 +65,6 @@ def get_session():
 def call_gemini(prompt, chat_id=None):
     headers = {'Content-Type': 'application/json'}
     last_error = ""
-    # Se a chave estiver vazia ou for a antiga exposta, avisar o usuário
-    if not GEMINI_API_KEY or GEMINI_API_KEY == 'AIzaSyDRbL1JXrjGWTNq7DoPwOzRKZopYBihD1g':
-        if chat_id:
-            bot.send_message(chat_id, "⚠️ A chave de API antiga foi desativada por segurança. Por favor, configure a NOVA chave nas 'Environment Variables' do Render como GEMINI_API_KEY.")
-        return None
-
     for model_name in GEMINI_MODELS:
         for version in ["v1", "v1beta"]:
             url = f"https://generativelanguage.googleapis.com/{version}/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
@@ -82,15 +82,14 @@ def call_gemini(prompt, chat_id=None):
             except Exception as e:
                 last_error = f"Erro técnico: {str(e)}"
                 continue
-    
     if chat_id:
-        bot.send_message(chat_id, f"❌ Falha na IA:\n{last_error}")
+        bot.send_message(chat_id, f"❌ Falha na IA. Verifique se a GEMINI_API_KEY no Render está correta.\nDetalhe: {last_error}")
     return None
 
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
-    bot.send_message(message.chat.id, "👋 Professor Juciano! Versão 8.0 Segura Ativa.\n\n"
-                                     "As chaves agora estão protegidas. Se o bot não responder, verifique se configurou a nova GEMINI_API_KEY no painel do Render.")
+    bot.send_message(message.chat.id, "👋 Professor Juciano! Versão 8.1 (Segurança Máxima) Ativa.\n\n"
+                                     "Tente registrar agora: *'Registra aula de hoje na 1A de Literatura sobre Barroco'*")
 
 @bot.message_handler(commands=['registrar'])
 def manual_registrar(message):
@@ -219,4 +218,7 @@ def finalize(message):
     user_state.pop(chat_id, None)
 
 if __name__ == "__main__":
-    bot.infinity_polling()
+    if bot:
+        bot.infinity_polling()
+    else:
+        print("Bot não iniciado devido à falta de TOKEN.")
