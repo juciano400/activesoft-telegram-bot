@@ -17,7 +17,6 @@ GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.
 
 # Configurações Activesoft
 LOGIN_URL = "https://siga03.activesoft.com.br/login/"
-# URL real de gravação que o sistema usa
 GRAVAR_URL_BASE = "https://app52.activesoft.com.br/sistema/sistema.1065614/TelasSIGA/Diario/RegistroAulasGravar.asp"
 
 # Dados do usuário
@@ -44,10 +43,7 @@ user_state = {}
 def get_session():
     session = requests.Session()
     session.trust_env = False
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     session.headers.update(headers)
     try:
         r_init = session.get(LOGIN_URL, timeout=15)
@@ -70,8 +66,16 @@ def call_gemini(prompt):
         print(f"Erro Gemini: {e}")
         return None
 
-@bot.message_handler(commands=['start', 'registrar'])
+@bot.message_handler(commands=['start'])
 def start_cmd(message):
+    bot.send_message(message.chat.id, "👋 Olá Professor Juciano! Eu sou seu assistente inteligente para o Activesoft.\n\n"
+                                     "Agora você pode registrar suas aulas de duas formas:\n\n"
+                                     "1️⃣ **Manual:** Digite /registrar e siga os botões.\n"
+                                     "2️⃣ **Inteligente:** Basta me mandar uma mensagem direta! \n"
+                                     "Ex: *'Registra aula de hoje na 1A de Literatura sobre Romantismo e tarefa ler pag 10'*")
+
+@bot.message_handler(commands=['registrar'])
+def manual_registrar(message):
     chat_id = message.chat.id
     user_state[chat_id] = {'classes': MY_CLASSES}
     markup = types.InlineKeyboardMarkup()
@@ -109,61 +113,83 @@ def handle_bim_selection(call):
     bot.send_message(chat_id, "Data da aula? (DD/MM/AAAA ou 'hoje')")
     user_state[chat_id]['step'] = 'data'
 
-@bot.message_handler(func=lambda message: message.chat.id in user_state and user_state[message.chat.id].get('step') == 'data')
-def get_date(message):
+# --- LÓGICA DE INTELIGÊNCIA NATURAL (NLP) ---
+@bot.message_handler(func=lambda message: True)
+def handle_nlp(message):
     chat_id = message.chat.id
-    user_state[chat_id]['data'] = datetime.now().strftime("%d/%m/%Y") if message.text.lower() == 'hoje' else message.text
-    user_state[chat_id]['step'] = 'conteudo'
-    bot.send_message(chat_id, "O que você ensinou hoje? (Ex: Machado de Assis, Funções da Linguagem)")
+    # Se estiver em um fluxo manual, não processar como NLP
+    if chat_id in user_state and 'step' in user_state[chat_id]:
+        if user_state[chat_id]['step'] == 'data':
+            get_date(message)
+            return
+        elif user_state[chat_id]['step'] == 'manual_content':
+            manual_content(message)
+            return
+        elif user_state[chat_id]['step'] == 'manual_task':
+            manual_task(message)
+            return
 
-@bot.message_handler(func=lambda message: message.chat.id in user_state and user_state[message.chat.id].get('step') == 'conteudo')
-def get_content(message):
-    chat_id = message.chat.id
-    raw_content = message.text
-    bot.send_message(chat_id, "🤖 Elaborando registro pedagógico com Gemini...")
+    bot.send_chat_action(chat_id, 'typing')
     
     prompt = (
-        f"Atue como um professor de {user_state[chat_id]['selected_class']['disciplina']} de Ensino Médio. "
-        f"O tema da aula foi: '{raw_content}'. "
-        "Gere um registro de diário de classe extremamente profissional, detalhado e acadêmico. "
-        "Você DEVE incluir obrigatoriamente: "
-        "1. Um parágrafo descrevendo o conteúdo abordado. "
-        "2. As Habilidades específicas da BNCC (com códigos, ex: EM13LGG101) relacionadas ao tema. "
-        "3. Uma sugestão de tarefa de casa curta e prática. "
-        "Responda APENAS em formato JSON com as chaves: 'registro' e 'tarefa'. "
-        "Não use markdown, apenas o JSON puro."
+        f"Analise esta solicitação de um professor: '{message.text}'. "
+        f"Data atual: {datetime.now().strftime('%d/%m/%Y')}. "
+        "Extraia as informações necessárias para registrar uma aula no diário escolar. "
+        "Aqui estão as turmas e disciplinas disponíveis (use o índice para identificar):\n"
+        + "\n".join([f"{i}: {c['turma']} - {c['disciplina']}" for i, c in enumerate(MY_CLASSES)]) +
+        "\n\nRegras:\n"
+        "1. Identifique o índice da turma/disciplina correta.\n"
+        "2. Identifique a data (se disser 'hoje', use a data atual).\n"
+        "3. Se o bimestre não for mencionado, assuma o índice 1 (2º Bimestre).\n"
+        "4. Crie um registro pedagógico PROFISSIONAL e DETALHADO baseado no tema, incluindo habilidades BNCC relevantes.\n"
+        "5. Extraia a tarefa de casa se houver.\n\n"
+        "Responda APENAS em JSON puro com as chaves: 'class_idx', 'data', 'bim_idx', 'registro', 'tarefa'."
     )
     
     ai_response = call_gemini(prompt)
     try:
         clean_json = ai_response.replace('```json', '').replace('```', '').strip()
         data = json.loads(clean_json)
-        user_state[chat_id]['conteudo'], user_state[chat_id]['tarefa'] = data['registro'], data['tarefa']
-    except:
-        user_state[chat_id]['conteudo'], user_state[chat_id]['tarefa'] = raw_content, ""
+        
+        user_state[chat_id] = {
+            'selected_class': MY_CLASSES[int(data['class_idx'])],
+            'data': data['data'],
+            'selected_bim': [{"label": "1º Bimestre", "id": "9219"}, {"label": "2º Bimestre", "id": "9220"}, {"label": "3º Bimestre", "id": "9221"}, {"label": "4º Bimestre", "id": "9222"}][int(data['bim_idx'])],
+            'conteudo': data['registro'],
+            'tarefa': data['tarefa']
+        }
+        
+        summary = (
+            f"🧠 **Entendi seu pedido!**\n\n"
+            f"🏫 **Turma:** {user_state[chat_id]['selected_class']['turma']}\n"
+            f"📚 **Disciplina:** {user_state[chat_id]['selected_class']['disciplina']}\n"
+            f"📅 **Data:** {user_state[chat_id]['data']}\n"
+            f"📖 **Registro:** {user_state[chat_id]['conteudo']}\n"
+            f"📝 **Tarefa:** {user_state[chat_id]['tarefa'] or 'Nenhuma'}\n\n"
+            f"Deseja confirmar o envio para o Activesoft?"
+        )
+        markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
+        markup.add('Confirmar Envio', 'Cancelar')
+        bot.send_message(chat_id, summary, reply_markup=markup, parse_mode="Markdown")
+        user_state[chat_id]['step'] = 'final_confirm'
+        
+    except Exception as e:
+        print(f"Erro NLP: {e}")
+        bot.send_message(chat_id, "😅 Não consegui entender todos os detalhes. Tente ser mais específico ou use o comando /registrar para ir pelo menu.")
 
-    summary = f"✨ **Sugestão Pedagógica**\n\n📖 **Registro:** {user_state[chat_id]['conteudo']}\n\n📝 **Tarefa:** {user_state[chat_id]['tarefa']}"
-    markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
-    markup.add('Usar Sugestão', 'Escrever meu próprio')
-    bot.send_message(chat_id, summary, reply_markup=markup, parse_mode="Markdown")
-    user_state[chat_id]['step'] = 'ai_confirm'
-
-@bot.message_handler(func=lambda message: message.chat.id in user_state and user_state[message.chat.id].get('step') == 'ai_confirm')
-def ai_confirm(message):
+# --- FUNÇÕES DE APOIO ---
+def get_date(message):
     chat_id = message.chat.id
-    if message.text == 'Escrever meu próprio':
-        bot.send_message(chat_id, "Digite o conteúdo exatamente como deseja:")
-        user_state[chat_id]['step'] = 'manual_content'
-    else: finalize_summary(chat_id)
+    user_state[chat_id]['data'] = datetime.now().strftime("%d/%m/%Y") if message.text.lower() == 'hoje' else message.text
+    user_state[chat_id]['step'] = 'manual_content'
+    bot.send_message(chat_id, "O que você ensinou hoje?")
 
-@bot.message_handler(func=lambda message: message.chat.id in user_state and user_state[message.chat.id].get('step') == 'manual_content')
 def manual_content(message):
     chat_id = message.chat.id
     user_state[chat_id]['conteudo'] = message.text
     bot.send_message(chat_id, "Qual a tarefa?")
     user_state[chat_id]['step'] = 'manual_task'
 
-@bot.message_handler(func=lambda message: message.chat.id in user_state and user_state[message.chat.id].get('step') == 'manual_task')
 def manual_task(message):
     chat_id = message.chat.id
     user_state[chat_id]['tarefa'] = "" if message.text.lower() in ['não', 'nao', 'nada'] else message.text
@@ -189,41 +215,27 @@ def finalize(message):
         state = user_state[chat_id]
         session = get_session()
         if not session:
-            bot.send_message(chat_id, "❌ Erro ao conectar. Verifique suas credenciais.")
+            bot.send_message(chat_id, "❌ Erro ao conectar ao Activesoft.")
             return
             
         payload = {
-            "AulaSelecionada": "0",
-            "StRegistroEmEdicao": "0",
-            "DataAulaNovo": state['data'],
-            "ConteudoMinistradoNovo": state['conteudo'],
-            "TarefaNovo": state['tarefa'],
-            "btnGravarNovo": "Gravar",
-            "IdDiario": state['selected_bim']['id'],
-            "Disciplina": state['selected_class']['disciplina_full'],
-            "DescricaoDiario": f"Diário {state['selected_bim']['label']}",
-            "IdDisciplina": state['selected_class']['id_disciplina'],
-            "IdTurma": state['selected_class']['id_turma']
+            "AulaSelecionada": "0", "StRegistroEmEdicao": "0", "DataAulaNovo": state['data'],
+            "ConteudoMinistradoNovo": state['conteudo'], "TarefaNovo": state['tarefa'],
+            "btnGravarNovo": "Gravar", "IdDiario": state['selected_bim']['id'],
+            "Disciplina": state['selected_class']['disciplina_full'], "DescricaoDiario": f"Diário {state['selected_bim']['label']}",
+            "IdDisciplina": state['selected_class']['id_disciplina'], "IdTurma": state['selected_class']['id_turma']
         }
-        
-        # Headers fundamentais para simular o navegador e evitar bloqueio
         headers = {
             "Referer": f"https://app52.activesoft.com.br/sistema/sistema.1065614/TelasSIGA/Diario/RegistroAulas.asp?IdDiario={state['selected_bim']['id']}",
-            "Origin": "https://app52.activesoft.com.br",
-            "Content-Type": "application/x-www-form-urlencoded"
+            "Origin": "https://app52.activesoft.com.br"
         }
-        
         res = session.post(GRAVAR_URL_BASE, data=payload, headers=headers, timeout=20)
-        
-        # O Activesoft costuma retornar 200 mesmo se falhar, mas redireciona se tiver sucesso.
-        # Vamos verificar se o conteúdo salvo aparece na resposta ou se não há mensagens de erro.
         if res.status_code == 200:
-            bot.send_message(chat_id, "✅ Registro concluído com sucesso! Verifique seu portal.")
+            bot.send_message(chat_id, "✅ Registro concluído com sucesso!")
         else:
-            bot.send_message(chat_id, f"❌ O portal retornou um erro inesperado (Status: {res.status_code}).")
-            
+            bot.send_message(chat_id, f"❌ Erro no portal (Status: {res.status_code}).")
     except Exception as e:
-        bot.send_message(chat_id, f"❌ Erro ao enviar: {str(e)}")
+        bot.send_message(chat_id, f"❌ Erro técnico: {str(e)}")
     user_state.pop(chat_id, None)
 
 if __name__ == "__main__":
