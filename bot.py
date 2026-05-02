@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 import json
 import threading
 from flask import Flask
+import re
 
 # --- CONFIGURAÇÃO DO SERVIDOR WEB PARA O RENDER ---
 app = Flask(__name__)
@@ -21,10 +22,6 @@ def run_flask():
 # --- CONFIGURAÇÕES DE SEGURANÇA ---
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-
-print("--- DIAGNÓSTICO DO SISTEMA v8.4 ---")
-print(f"TELEGRAM_TOKEN: {'OK' if TOKEN else 'FALTANDO'}")
-print(f"GEMINI_API_KEY: {'OK' if GEMINI_API_KEY else 'FALTANDO'}")
 
 bot = TeleBot(TOKEN) if TOKEN else None
 GEMINI_MODEL = "gemini-1.5-flash"
@@ -70,15 +67,25 @@ def get_session():
         print(f"Erro login: {e}")
         return None
 
+def clean_json_response(text):
+    # Remove blocos de código markdown se houver
+    text = re.sub(r'```json\s*', '', text)
+    text = re.sub(r'```\s*', '', text)
+    return text.strip()
+
 def call_gemini(prompt, chat_id=None):
     if not GEMINI_API_KEY: return None
     url = f"https://generativelanguage.googleapis.com/v1/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-    payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"response_mime_type": "application/json"}}
+    # Removido response_mime_type para evitar erro de compatibilidade
+    payload = {
+        "contents": [{"parts": [{"text": prompt + "\nRESPONDA APENAS EM FORMATO JSON PURO, SEM TEXTO ADICIONAL."}]}]
+    }
     try:
         res = requests.post(url, json=payload, timeout=25)
         res_json = res.json()
         if 'candidates' in res_json:
-            return res_json['candidates'][0]['content']['parts'][0]['text']
+            raw_text = res_json['candidates'][0]['content']['parts'][0]['text']
+            return clean_json_response(raw_text)
         else:
             if chat_id: bot.send_message(chat_id, f"❌ Erro na IA: {res_json.get('error', {}).get('message', 'Erro')}")
             return None
@@ -89,7 +96,7 @@ def call_gemini(prompt, chat_id=None):
 if bot:
     @bot.message_handler(commands=['start'])
     def start_cmd(message):
-        bot.send_message(message.chat.id, "👋 Professor Juciano! Versão 8.4 Online.\n\n"
+        bot.send_message(message.chat.id, "👋 Professor Juciano! Versão 8.5 Estável.\n\n"
                                          "Mande sua aula ou use /registrar.")
 
     @bot.message_handler(commands=['registrar'])
@@ -198,8 +205,6 @@ if bot:
 
     # Iniciar Flask em uma thread separada
     threading.Thread(target=run_flask).start()
-    
-    print("Bot e Servidor Flask Iniciados!")
     bot.infinity_polling()
 else:
     print("ERRO: TOKEN não encontrado.")
