@@ -47,29 +47,47 @@ MY_CLASSES = [
 
 user_state = {}
 
+APP_BASE_URL = "https://app52.activesoft.com.br"
+DIARIO_URL = f"{APP_BASE_URL}/sistema/sistema.1065614/TelasSIGA/Diario/RegistroAulas.asp"
+
 def get_session():
     session = requests.Session()
     session.trust_env = False
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     session.headers.update(headers)
     try:
+        # 1. Busca CSRF token
         r_init = session.get(LOGIN_URL, timeout=15)
         soup = BeautifulSoup(r_init.text, 'html.parser')
         csrf_input = soup.find('input', {'name': 'csrfmiddlewaretoken'})
         if not csrf_input:
             print("Erro login: CSRF token não encontrado na página")
-            return None
+            return None, "CSRF token não encontrado na página de login"
+
+        # 2. Faz login no siga03
         csrf_token = csrf_input['value']
         login_data = {"csrfmiddlewaretoken": csrf_token, "codigo": INSTITUICAO, "login": USERNAME, "senha": PASSWORD}
         r_login = session.post(LOGIN_URL, data=login_data, timeout=15)
-        # Login bem-sucedido redireciona para fora da página de login
-        if LOGIN_URL.rstrip('/') in r_login.url and 'login' in r_login.url.lower():
-            print(f"Erro login: ainda na página de login após POST. URL final: {r_login.url}")
-            return None
-        return session
+        if 'login' in r_login.url.lower() and LOGIN_URL.rstrip('/') in r_login.url:
+            print(f"Erro login: ainda na página de login. URL: {r_login.url}")
+            return None, f"Credenciais recusadas. URL final: {r_login.url}"
+
+        print(f"Login OK. URL final: {r_login.url}")
+        print(f"Cookies siga03: {dict(session.cookies)}")
+
+        # 3. Acessa o app52 para estabelecer sessão lá também (cross-domain SSO)
+        r_app = session.get(DIARIO_URL, timeout=15, allow_redirects=True)
+        print(f"app52 status: {r_app.status_code} | URL: {r_app.url}")
+        print(f"Cookies app52: {dict(session.cookies)}")
+
+        # Se redirecionou para login, a sessão não foi aceita no app52
+        if 'login' in r_app.url.lower():
+            return None, f"Sessão não aceita no app52. Redirecionou para: {r_app.url}"
+
+        return session, None
     except Exception as e:
         print(f"Erro login: {e}")
-        return None
+        return None, str(e)
 
 def parse_fast_command(text):
     # Padrão: 1A Lit Conteudo / Tarefa
@@ -121,11 +139,35 @@ def parse_fast_command(text):
 if bot:
     @bot.message_handler(commands=['start'])
     def start_cmd(message):
-        bot.send_message(message.chat.id, "🚀 **Bot Professor Juciano v9.0 (Ultra Rápido)**\n\n"
-                                         "Agora sem IA para ser infalível! Basta mandar assim:\n\n"
+        bot.send_message(message.chat.id, "🚀 **Bot Professor Juciano v9.1**\n\n"
+                                         "Basta mandar assim:\n\n"
                                          "`1A Lit Trovadorismo tarefa ler livro`\n"
                                          "`2A Red Coesão / Exercícios pág 10`\n\n"
-                                         "Ou use /registrar para o menu passo a passo.")
+                                         "Ou use /registrar para o menu passo a passo.\n"
+                                         "Use /teste para verificar a conexão com o Activesoft.")
+
+    @bot.message_handler(commands=['teste'])
+    def teste_conexao(message):
+        chat_id = message.chat.id
+        bot.send_message(chat_id, "🔍 Testando conexão com o Activesoft...")
+        session, erro = get_session()
+        if not session:
+            bot.send_message(chat_id, f"❌ **Falha no login:**\n`{erro}`")
+            return
+        # Testa o acesso ao diário
+        try:
+            r = session.get(f"{DIARIO_URL}?IdDiario=9220", timeout=15)
+            body_lower = r.text.lower()
+            if 'login' in r.url.lower():
+                bot.send_message(chat_id, f"⚠️ Login OK mas app52 redirecionou para login.\nURL: `{r.url}`")
+            elif 'diario' in body_lower or 'aula' in body_lower or 'registro' in body_lower:
+                bot.send_message(chat_id, f"✅ Conexão OK! Sessão válida no app52.\nStatus: {r.status_code}")
+            else:
+                soup_r = BeautifulSoup(r.text, 'html.parser')
+                texto = soup_r.get_text(separator=' ', strip=True)[:300]
+                bot.send_message(chat_id, f"⚠️ app52 respondeu mas conteúdo inesperado.\nStatus: {r.status_code}\n`{texto}`")
+        except Exception as e:
+            bot.send_message(chat_id, f"❌ Erro ao acessar app52: `{str(e)}`")
 
     @bot.message_handler(commands=['registrar'])
     def manual_registrar(message):
@@ -233,9 +275,9 @@ if bot:
             bot.send_message(chat_id, "Enviando para o Activesoft...", reply_markup=types.ReplyKeyboardRemove())
             try:
                 state = user_state[chat_id]
-                session = get_session()
+                session, erro_login = get_session()
                 if not session:
-                    bot.send_message(chat_id, "❌ Falha no login do Activesoft. Verifique as credenciais e tente novamente.")
+                    bot.send_message(chat_id, f"❌ Falha no login do Activesoft:\n`{erro_login}`")
                     user_state.pop(chat_id, None)
                     return
                 payload = {
