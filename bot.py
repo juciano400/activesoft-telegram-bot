@@ -24,7 +24,9 @@ TOKEN = os.getenv('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 bot = TeleBot(TOKEN) if TOKEN else None
-GEMINI_MODEL = "gemini-1.5-flash"
+
+# Configuração Gemini - Tentando nomes alternativos para compatibilidade
+GEMINI_MODELS = ["gemini-1.5-flash", "models/gemini-1.5-flash"]
 
 # Configurações Activesoft
 LOGIN_URL = "https://siga03.activesoft.com.br/login/"
@@ -68,36 +70,42 @@ def get_session():
         return None
 
 def clean_json_response(text):
-    # Remove blocos de código markdown se houver
     text = re.sub(r'```json\s*', '', text)
     text = re.sub(r'```\s*', '', text)
     return text.strip()
 
 def call_gemini(prompt, chat_id=None):
     if not GEMINI_API_KEY: return None
-    url = f"https://generativelanguage.googleapis.com/v1/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-    # Removido response_mime_type para evitar erro de compatibilidade
-    payload = {
-        "contents": [{"parts": [{"text": prompt + "\nRESPONDA APENAS EM FORMATO JSON PURO, SEM TEXTO ADICIONAL."}]}]
-    }
-    try:
-        res = requests.post(url, json=payload, timeout=25)
-        res_json = res.json()
-        if 'candidates' in res_json:
-            raw_text = res_json['candidates'][0]['content']['parts'][0]['text']
-            return clean_json_response(raw_text)
-        else:
-            if chat_id: bot.send_message(chat_id, f"❌ Erro na IA: {res_json.get('error', {}).get('message', 'Erro')}")
-            return None
-    except Exception as e:
-        if chat_id: bot.send_message(chat_id, f"❌ Erro técnico IA: {str(e)}")
-        return None
+    
+    last_error = ""
+    for model in GEMINI_MODELS:
+        # Tentar v1beta primeiro pois é mais comum suportar JSON Mode
+        for version in ["v1beta", "v1"]:
+            url = f"https://generativelanguage.googleapis.com/{version}/{model}:generateContent?key={GEMINI_API_KEY}"
+            payload = {
+                "contents": [{"parts": [{"text": prompt + "\nRESPONDA APENAS EM FORMATO JSON PURO, SEM TEXTO ADICIONAL."}]}]
+            }
+            try:
+                res = requests.post(url, json=payload, timeout=25)
+                res_json = res.json()
+                if 'candidates' in res_json:
+                    raw_text = res_json['candidates'][0]['content']['parts'][0]['text']
+                    return clean_json_response(raw_text)
+                else:
+                    last_error = f"{model} ({version}): {res_json.get('error', {}).get('message', 'Erro')}"
+            except Exception as e:
+                last_error = str(e)
+                continue
+    
+    if chat_id:
+        bot.send_message(chat_id, f"❌ Falha na IA após várias tentativas:\n{last_error}")
+    return None
 
 if bot:
     @bot.message_handler(commands=['start'])
     def start_cmd(message):
-        bot.send_message(message.chat.id, "👋 Professor Juciano! Versão 8.5 Estável.\n\n"
-                                         "Mande sua aula ou use /registrar.")
+        bot.send_message(message.chat.id, "👋 Professor Juciano! Versão 8.6 Ativa.\n\n"
+                                         "Tente: *'Registra aula de hoje na 1A de Literatura sobre Barroco'*")
 
     @bot.message_handler(commands=['registrar'])
     def manual_registrar(message):
@@ -203,7 +211,6 @@ if bot:
         except Exception as e: bot.send_message(chat_id, f"❌ Erro: {str(e)}")
         user_state.pop(chat_id, None)
 
-    # Iniciar Flask em uma thread separada
     threading.Thread(target=run_flask).start()
     bot.infinity_polling()
 else:
