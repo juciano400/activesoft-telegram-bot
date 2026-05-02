@@ -6,15 +6,19 @@ from bs4 import BeautifulSoup
 import urllib.parse
 import json
 import time
-import re
 
 # Configurações do Bot Telegram
 TOKEN = '8369730656:AAFeb_zRAm6FUNg0CS3tYkDSLixWUrzWB6Y'
 bot = TeleBot(TOKEN)
 
-# Configuração Gemini - Usando v1beta para suporte a JSON mode se necessário, mas mantendo estável
+# Configuração Gemini - Modelos para Fallback
 GEMINI_API_KEY = 'AIzaSyDRbL1JXrjGWTNq7DoPwOzRKZopYBihD1g'
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+# Lista de modelos por ordem de preferência
+GEMINI_MODELS = [
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+    "gemini-1.0-pro"
+]
 
 # Configurações Activesoft
 LOGIN_URL = "https://siga03.activesoft.com.br/login/"
@@ -59,32 +63,31 @@ def get_session():
 
 def call_gemini(prompt):
     headers = {'Content-Type': 'application/json'}
-    # Adicionando resposta forçada em JSON
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "response_mime_type": "application/json"
+    # Tentar cada modelo da lista até um funcionar
+    for model_name in GEMINI_MODELS:
+        url = f"https://generativelanguage.googleapis.com/v1/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "response_mime_type": "application/json"
+            }
         }
-    }
-    try:
-        res = requests.post(GEMINI_URL, headers=headers, json=payload, timeout=30)
-        res_json = res.json()
-        if 'candidates' in res_json:
-            return res_json['candidates'][0]['content']['parts'][0]['text']
-        else:
-            print(f"Resposta inesperada do Gemini: {res_json}")
-            return None
-    except Exception as e:
-        print(f"Erro Gemini: {e}")
-        return None
+        try:
+            print(f"Tentando Gemini com modelo: {model_name}")
+            res = requests.post(url, headers=headers, json=payload, timeout=20)
+            res_json = res.json()
+            if 'candidates' in res_json:
+                return res_json['candidates'][0]['content']['parts'][0]['text']
+        except Exception as e:
+            print(f"Erro com modelo {model_name}: {e}")
+            continue
+    return None
 
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
-    bot.send_message(message.chat.id, "👋 Olá Professor Juciano! Eu sou seu assistente inteligente para o Activesoft.\n\n"
-                                     "Agora você pode registrar suas aulas de duas formas:\n\n"
-                                     "1️⃣ **Manual:** Digite /registrar e siga os botões.\n"
-                                     "2️⃣ **Inteligente:** Basta me mandar uma mensagem direta! \n"
-                                     "Ex: *'Registra aula de hoje na 1A de Literatura sobre Romantismo e tarefa ler pag 10'*")
+    bot.send_message(message.chat.id, "👋 Olá Professor Juciano! Eu sou seu assistente inteligente v7.0.\n\n"
+                                     "Agora com **fallback automático** de IA e versão estável v1 do Gemini.\n\n"
+                                     "Ex: *'Registra aula de hoje na 1A de Literatura sobre Romantismo'*")
 
 @bot.message_handler(commands=['registrar'])
 def manual_registrar(message):
@@ -134,30 +137,24 @@ def handle_nlp(message):
         elif user_state[chat_id]['step'] == 'manual_task': manual_task(message); return
 
     bot.send_chat_action(chat_id, 'typing')
-    
-    # Datas relativas
     hoje = datetime.now()
-    amanha = hoje + timedelta(days=1)
-    ontem = hoje - timedelta(days=1)
     
     prompt = (
-        f"Analise a solicitação: '{message.text}'. "
-        f"Hoje é {hoje.strftime('%d/%m/%Y')}. "
-        "Extraia os dados para o diário escolar em JSON.\n"
-        "Turmas disponíveis (índices):\n"
+        f"Analise: '{message.text}'. Hoje: {hoje.strftime('%d/%m/%Y')}.\n"
+        "Turmas disponíveis (class_idx):\n"
         + "\n".join([f"{i}: {c['turma']} - {c['disciplina']}" for i, c in enumerate(MY_CLASSES)]) +
         "\n\nRegras:\n"
-        "1. Identifique o 'class_idx' correto.\n"
-        "2. Identifique a 'data' (formato DD/MM/AAAA).\n"
-        "3. 'bim_idx' padrão é 1 (2º Bimestre).\n"
-        "4. Crie um 'registro' pedagógico detalhado com habilidades BNCC.\n"
-        "5. Extraia a 'tarefa'.\n"
-        "Retorne APENAS o JSON: {'class_idx': int, 'data': 'string', 'bim_idx': int, 'registro': 'string', 'tarefa': 'string'}"
+        "1. Identifique 'class_idx'.\n"
+        "2. Identifique 'data' (DD/MM/AAAA).\n"
+        "3. 'bim_idx' padrão 1.\n"
+        "4. Crie 'registro' formal detalhado com BNCC.\n"
+        "5. Extraia 'tarefa'.\n"
+        "Retorne APENAS JSON: {'class_idx': int, 'data': 'string', 'bim_idx': int, 'registro': 'string', 'tarefa': 'string'}"
     )
     
     ai_response = call_gemini(prompt)
     if not ai_response:
-        bot.send_message(chat_id, "❌ Erro ao conectar com o Gemini. Tente novamente em instantes.")
+        bot.send_message(chat_id, "❌ Todos os modelos do Gemini falharam. Verifique sua chave de API ou tente novamente mais tarde.")
         return
 
     try:
@@ -172,7 +169,7 @@ def handle_nlp(message):
         }
         
         summary = (
-            f"🧠 **Entendi seu pedido!**\n\n"
+            f"🧠 **Assistente Inteligente**\n\n"
             f"🏫 **Turma:** {user_state[chat_id]['selected_class']['turma']}\n"
             f"📚 **Disciplina:** {user_state[chat_id]['selected_class']['disciplina']}\n"
             f"📅 **Data:** {user_state[chat_id]['data']}\n"
@@ -186,8 +183,7 @@ def handle_nlp(message):
         user_state[chat_id]['step'] = 'final_confirm'
         
     except Exception as e:
-        print(f"Erro processamento JSON: {e}\nResposta: {ai_response}")
-        bot.send_message(chat_id, "😅 Não entendi bem. Tente algo como: 'Registra aula de hoje na 1A de Literatura sobre Barroco'.")
+        bot.send_message(chat_id, "😅 Tente ser mais específico. Ex: 'Registra aula de hoje na 1A de Literatura sobre Barroco'.")
 
 def get_date(message):
     chat_id = message.chat.id
@@ -218,7 +214,7 @@ def finalize_summary(chat_id):
 def finalize(message):
     chat_id = message.chat.id
     if message.text == 'Cancelar':
-        bot.send_message(chat_id, "Operação cancelada.", reply_markup=types.ReplyKeyboardRemove())
+        bot.send_message(chat_id, "Cancelado.", reply_markup=types.ReplyKeyboardRemove())
         user_state.pop(chat_id, None); return
     
     bot.send_message(chat_id, "Enviando para o Activesoft...", reply_markup=types.ReplyKeyboardRemove())
