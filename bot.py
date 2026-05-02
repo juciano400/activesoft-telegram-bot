@@ -11,14 +11,9 @@ import time
 TOKEN = '8369730656:AAFeb_zRAm6FUNg0CS3tYkDSLixWUrzWB6Y'
 bot = TeleBot(TOKEN)
 
-# Configuração Gemini - Modelos para Fallback
+# Configuração Gemini
 GEMINI_API_KEY = 'AIzaSyDRbL1JXrjGWTNq7DoPwOzRKZopYBihD1g'
-# Lista de modelos por ordem de preferência
-GEMINI_MODELS = [
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-    "gemini-1.0-pro"
-]
+GEMINI_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro"]
 
 # Configurações Activesoft
 LOGIN_URL = "https://siga03.activesoft.com.br/login/"
@@ -61,33 +56,36 @@ def get_session():
         print(f"Erro login: {e}")
         return None
 
-def call_gemini(prompt):
+def call_gemini(prompt, chat_id=None):
     headers = {'Content-Type': 'application/json'}
-    # Tentar cada modelo da lista até um funcionar
+    last_error = ""
     for model_name in GEMINI_MODELS:
-        url = f"https://generativelanguage.googleapis.com/v1/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "response_mime_type": "application/json"
+        # Tentar tanto v1 quanto v1beta
+        for version in ["v1", "v1beta"]:
+            url = f"https://generativelanguage.googleapis.com/{version}/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"response_mime_type": "application/json"}
             }
-        }
-        try:
-            print(f"Tentando Gemini com modelo: {model_name}")
-            res = requests.post(url, headers=headers, json=payload, timeout=20)
-            res_json = res.json()
-            if 'candidates' in res_json:
-                return res_json['candidates'][0]['content']['parts'][0]['text']
-        except Exception as e:
-            print(f"Erro com modelo {model_name}: {e}")
-            continue
+            try:
+                res = requests.post(url, headers=headers, json=payload, timeout=20)
+                res_json = res.json()
+                if 'candidates' in res_json:
+                    return res_json['candidates'][0]['content']['parts'][0]['text']
+                else:
+                    last_error = f"Modelo {model_name} ({version}): {res_json.get('error', {}).get('message', 'Erro desconhecido')}"
+            except Exception as e:
+                last_error = f"Erro técnico {model_name} ({version}): {str(e)}"
+                continue
+    
+    if chat_id:
+        bot.send_message(chat_id, f"🔍 Detalhe do erro da IA:\n{last_error}")
     return None
 
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
-    bot.send_message(message.chat.id, "👋 Olá Professor Juciano! Eu sou seu assistente inteligente v7.0.\n\n"
-                                     "Agora com **fallback automático** de IA e versão estável v1 do Gemini.\n\n"
-                                     "Ex: *'Registra aula de hoje na 1A de Literatura sobre Romantismo'*")
+    bot.send_message(message.chat.id, "👋 Olá Professor Juciano! Versão 7.1 Ativa.\n\n"
+                                     "Tente registrar agora: *'Registra aula de hoje na 1A de Literatura sobre Barroco'*")
 
 @bot.message_handler(commands=['registrar'])
 def manual_registrar(message):
@@ -141,49 +139,33 @@ def handle_nlp(message):
     
     prompt = (
         f"Analise: '{message.text}'. Hoje: {hoje.strftime('%d/%m/%Y')}.\n"
-        "Turmas disponíveis (class_idx):\n"
+        "Turmas (class_idx):\n"
         + "\n".join([f"{i}: {c['turma']} - {c['disciplina']}" for i, c in enumerate(MY_CLASSES)]) +
-        "\n\nRegras:\n"
-        "1. Identifique 'class_idx'.\n"
-        "2. Identifique 'data' (DD/MM/AAAA).\n"
-        "3. 'bim_idx' padrão 1.\n"
-        "4. Crie 'registro' formal detalhado com BNCC.\n"
-        "5. Extraia 'tarefa'.\n"
-        "Retorne APENAS JSON: {'class_idx': int, 'data': 'string', 'bim_idx': int, 'registro': 'string', 'tarefa': 'string'}"
+        "\nRegras: Identifique class_idx, data (DD/MM/AAAA), bim_idx (padrão 1), registro detalhado com BNCC, tarefa.\n"
+        "Retorne JSON: {'class_idx': int, 'data': 'string', 'bim_idx': int, 'registro': 'string', 'tarefa': 'string'}"
     )
     
-    ai_response = call_gemini(prompt)
+    ai_response = call_gemini(prompt, chat_id)
     if not ai_response:
-        bot.send_message(chat_id, "❌ Todos os modelos do Gemini falharam. Verifique sua chave de API ou tente novamente mais tarde.")
+        bot.send_message(chat_id, "❌ Falha crítica na IA. Tente novamente ou verifique sua API Key.")
         return
 
     try:
         data = json.loads(ai_response)
-        idx = int(data['class_idx'])
         user_state[chat_id] = {
-            'selected_class': MY_CLASSES[idx],
+            'selected_class': MY_CLASSES[int(data['class_idx'])],
             'data': data['data'],
             'selected_bim': [{"label": "1º Bimestre", "id": "9219"}, {"label": "2º Bimestre", "id": "9220"}, {"label": "3º Bimestre", "id": "9221"}, {"label": "4º Bimestre", "id": "9222"}][int(data['bim_idx'])],
             'conteudo': data['registro'],
             'tarefa': data['tarefa']
         }
-        
-        summary = (
-            f"🧠 **Assistente Inteligente**\n\n"
-            f"🏫 **Turma:** {user_state[chat_id]['selected_class']['turma']}\n"
-            f"📚 **Disciplina:** {user_state[chat_id]['selected_class']['disciplina']}\n"
-            f"📅 **Data:** {user_state[chat_id]['data']}\n"
-            f"📖 **Registro:** {user_state[chat_id]['conteudo']}\n"
-            f"📝 **Tarefa:** {user_state[chat_id]['tarefa'] or 'Nenhuma'}\n\n"
-            f"Deseja confirmar o envio?"
-        )
+        summary = f"🧠 **Assistente**\n\n🏫 **Turma:** {user_state[chat_id]['selected_class']['turma']}\n📚 **Disc:** {user_state[chat_id]['selected_class']['disciplina']}\n📅 **Data:** {user_state[chat_id]['data']}\n📖 **Reg:** {user_state[chat_id]['conteudo']}\n📝 **Tarefa:** {user_state[chat_id]['tarefa']}\n\nDeseja confirmar?"
         markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
         markup.add('Confirmar Envio', 'Cancelar')
-        bot.send_message(chat_id, summary, reply_markup=markup, parse_mode="Markdown")
+        bot.send_message(chat_id, summary, reply_markup=markup)
         user_state[chat_id]['step'] = 'final_confirm'
-        
     except Exception as e:
-        bot.send_message(chat_id, "😅 Tente ser mais específico. Ex: 'Registra aula de hoje na 1A de Literatura sobre Barroco'.")
+        bot.send_message(chat_id, "😅 Não entendi. Tente: 'Registra aula de hoje na 1A de Literatura sobre Barroco'.")
 
 def get_date(message):
     chat_id = message.chat.id
@@ -204,7 +186,7 @@ def manual_task(message):
 
 def finalize_summary(chat_id):
     state = user_state[chat_id]
-    summary = f"🚀 **Confirmar Envio Final?**\n\n📅 Data: {state['data']}\n🏫 Turma: {state['selected_class']['turma']}\n📚 Disciplina: {state['selected_class']['disciplina']}\n📖 Registro: {state['conteudo'][:100]}...\n📝 Tarefa: {state['tarefa']}"
+    summary = f"🚀 **Confirmar?**\n\n📅 {state['data']}\n🏫 {state['selected_class']['turma']}\n📖 {state['conteudo'][:100]}...\n📝 {state['tarefa']}"
     markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
     markup.add('Confirmar Envio', 'Cancelar')
     bot.send_message(chat_id, summary, reply_markup=markup)
@@ -216,13 +198,10 @@ def finalize(message):
     if message.text == 'Cancelar':
         bot.send_message(chat_id, "Cancelado.", reply_markup=types.ReplyKeyboardRemove())
         user_state.pop(chat_id, None); return
-    
-    bot.send_message(chat_id, "Enviando para o Activesoft...", reply_markup=types.ReplyKeyboardRemove())
+    bot.send_message(chat_id, "Enviando...", reply_markup=types.ReplyKeyboardRemove())
     try:
         state = user_state[chat_id]
         session = get_session()
-        if not session: bot.send_message(chat_id, "❌ Erro de login."); return
-            
         payload = {
             "AulaSelecionada": "0", "StRegistroEmEdicao": "0", "DataAulaNovo": state['data'],
             "ConteudoMinistradoNovo": state['conteudo'], "TarefaNovo": state['tarefa'],
@@ -232,7 +211,7 @@ def finalize(message):
         }
         headers = {"Referer": f"https://app52.activesoft.com.br/sistema/sistema.1065614/TelasSIGA/Diario/RegistroAulas.asp?IdDiario={state['selected_bim']['id']}", "Origin": "https://app52.activesoft.com.br"}
         res = session.post(GRAVAR_URL_BASE, data=payload, headers=headers, timeout=20)
-        bot.send_message(chat_id, "✅ Registro concluído com sucesso!" if res.status_code == 200 else f"❌ Erro {res.status_code}")
+        bot.send_message(chat_id, "✅ Registro concluído!" if res.status_code == 200 else f"❌ Erro {res.status_code}")
     except Exception as e: bot.send_message(chat_id, f"❌ Erro: {str(e)}")
     user_state.pop(chat_id, None)
 
