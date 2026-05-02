@@ -55,9 +55,17 @@ def get_session():
     try:
         r_init = session.get(LOGIN_URL, timeout=15)
         soup = BeautifulSoup(r_init.text, 'html.parser')
-        csrf_token = soup.find('input', {'name': 'csrfmiddlewaretoken'})['value']
+        csrf_input = soup.find('input', {'name': 'csrfmiddlewaretoken'})
+        if not csrf_input:
+            print("Erro login: CSRF token não encontrado na página")
+            return None
+        csrf_token = csrf_input['value']
         login_data = {"csrfmiddlewaretoken": csrf_token, "codigo": INSTITUICAO, "login": USERNAME, "senha": PASSWORD}
-        session.post(LOGIN_URL, data=login_data, timeout=15)
+        r_login = session.post(LOGIN_URL, data=login_data, timeout=15)
+        # Login bem-sucedido redireciona para fora da página de login
+        if LOGIN_URL.rstrip('/') in r_login.url and 'login' in r_login.url.lower():
+            print(f"Erro login: ainda na página de login após POST. URL final: {r_login.url}")
+            return None
         return session
     except Exception as e:
         print(f"Erro login: {e}")
@@ -226,6 +234,10 @@ if bot:
             try:
                 state = user_state[chat_id]
                 session = get_session()
+                if not session:
+                    bot.send_message(chat_id, "❌ Falha no login do Activesoft. Verifique as credenciais e tente novamente.")
+                    user_state.pop(chat_id, None)
+                    return
                 payload = {
                     "AulaSelecionada": "0", "StRegistroEmEdicao": "0", "DataAulaNovo": state['data'],
                     "ConteudoMinistradoNovo": state['conteudo'], "TarefaNovo": state['tarefa'],
@@ -233,14 +245,26 @@ if bot:
                     "Disciplina": state['selected_class']['disciplina_full'], "DescricaoDiario": f"Diário {state['selected_bim']['label']}",
                     "IdDisciplina": state['selected_class']['id_disciplina'], "IdTurma": state['selected_class']['id_turma']
                 }
-                headers = {"Referer": f"https://app52.activesoft.com.br/sistema/sistema.1065614/TelasSIGA/Diario/RegistroAulas.asp?IdDiario={state['selected_bim']['id']}", "Origin": "https://app52.activesoft.com.br"}
+                headers = {
+                    "Referer": f"https://app52.activesoft.com.br/sistema/sistema.1065614/TelasSIGA/Diario/RegistroAulas.asp?IdDiario={state['selected_bim']['id']}",
+                    "Origin": "https://app52.activesoft.com.br"
+                }
                 res = session.post(GRAVAR_URL_BASE, data=payload, headers=headers, timeout=20)
-                if res.status_code == 200:
+                body = res.text.lower()
+                # Verifica no corpo da resposta se houve sucesso real
+                if res.status_code == 200 and ("sucesso" in body or "gravado" in body or "registrado" in body or "gravar" not in body):
                     bot.send_message(chat_id, "✅ Registro concluído com sucesso!")
+                elif res.status_code != 200:
+                    bot.send_message(chat_id, f"❌ Erro no Activesoft: Status HTTP {res.status_code}")
                 else:
-                    bot.send_message(chat_id, f"❌ Erro no Activesoft: Status {res.status_code}")
+                    # Retornou 200 mas corpo indica erro — extrai trecho para diagnóstico
+                    soup_resp = BeautifulSoup(res.text, 'html.parser')
+                    texto_visivel = soup_resp.get_text(separator=' ', strip=True)[:400]
+                    bot.send_message(chat_id, f"⚠️ Activesoft respondeu mas pode não ter gravado.\nResposta:\n`{texto_visivel}`")
+                print(f"POST Activesoft — Status: {res.status_code} | URL: {res.url}")
             except Exception as e:
                 bot.send_message(chat_id, f"❌ Erro técnico: {str(e)}")
+                print(f"Exceção ao enviar para Activesoft: {e}")
             user_state.pop(chat_id, None)
 
     threading.Thread(target=run_flask).start()
