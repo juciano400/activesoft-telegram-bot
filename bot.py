@@ -1,25 +1,21 @@
 import os
 import requests
 from telebot import TeleBot, types
-from datetime import datetime, timedelta
+from datetime import datetime
 from bs4 import BeautifulSoup
-import urllib.parse
 import json
-import time
 
 # --- CONFIGURAÇÕES DE SEGURANÇA ---
-# As chaves DEVEM ser configuradas no painel do Render (Environment Variables)
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 if not TOKEN or not GEMINI_API_KEY:
     print("ERRO CRÍTICO: Variáveis de ambiente TELEGRAM_TOKEN ou GEMINI_API_KEY não configuradas!")
-    # O bot não iniciará sem as chaves para evitar erros silenciosos
 
 bot = TeleBot(TOKEN) if TOKEN else None
 
-# Configuração Gemini
-GEMINI_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro"]
+# Configuração Gemini Estável
+GEMINI_MODEL = "gemini-1.5-flash"
 
 # Configurações Activesoft
 LOGIN_URL = "https://siga03.activesoft.com.br/login/"
@@ -63,33 +59,34 @@ def get_session():
         return None
 
 def call_gemini(prompt, chat_id=None):
+    # Usando a URL estável v1
+    url = f"https://generativelanguage.googleapis.com/v1/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
     headers = {'Content-Type': 'application/json'}
-    last_error = ""
-    for model_name in GEMINI_MODELS:
-        for version in ["v1", "v1beta"]:
-            url = f"https://generativelanguage.googleapis.com/{version}/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
-            payload = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"response_mime_type": "application/json"}
-            }
-            try:
-                res = requests.post(url, headers=headers, json=payload, timeout=20)
-                res_json = res.json()
-                if 'candidates' in res_json:
-                    return res_json['candidates'][0]['content']['parts'][0]['text']
-                else:
-                    last_error = f"Erro IA ({model_name}): {res_json.get('error', {}).get('message', 'Erro desconhecido')}"
-            except Exception as e:
-                last_error = f"Erro técnico: {str(e)}"
-                continue
-    if chat_id:
-        bot.send_message(chat_id, f"❌ Falha na IA. Verifique se a GEMINI_API_KEY no Render está correta.\nDetalhe: {last_error}")
-    return None
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "response_mime_type": "application/json"
+        }
+    }
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=25)
+        res_json = res.json()
+        if 'candidates' in res_json:
+            return res_json['candidates'][0]['content']['parts'][0]['text']
+        else:
+            error_msg = res_json.get('error', {}).get('message', 'Erro desconhecido')
+            if chat_id:
+                bot.send_message(chat_id, f"❌ Erro na IA: {error_msg}")
+            return None
+    except Exception as e:
+        if chat_id:
+            bot.send_message(chat_id, f"❌ Erro técnico: {str(e)}")
+        return None
 
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
-    bot.send_message(message.chat.id, "👋 Professor Juciano! Versão 8.1 (Segurança Máxima) Ativa.\n\n"
-                                     "Tente registrar agora: *'Registra aula de hoje na 1A de Literatura sobre Barroco'*")
+    bot.send_message(message.chat.id, "👋 Professor Juciano! Versão 8.2 Estável Ativa.\n\n"
+                                     "Tente: *'Registra aula de hoje na 1A de Literatura sobre Barroco'*")
 
 @bot.message_handler(commands=['registrar'])
 def manual_registrar(message):
@@ -166,7 +163,7 @@ def handle_nlp(message):
         markup.add('Confirmar Envio', 'Cancelar')
         bot.send_message(chat_id, summary, reply_markup=markup)
         user_state[chat_id]['step'] = 'final_confirm'
-    except Exception as e:
+    except Exception:
         bot.send_message(chat_id, "😅 Não entendi. Tente: 'Registra aula de hoje na 1A de Literatura sobre Barroco'.")
 
 def get_date(message):
@@ -220,5 +217,3 @@ def finalize(message):
 if __name__ == "__main__":
     if bot:
         bot.infinity_polling()
-    else:
-        print("Bot não iniciado devido à falta de TOKEN.")
