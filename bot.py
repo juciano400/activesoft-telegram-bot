@@ -3,7 +3,6 @@ import requests
 from telebot import TeleBot, types
 from datetime import datetime
 from bs4 import BeautifulSoup
-import json
 import threading
 from flask import Flask
 import re
@@ -21,12 +20,7 @@ def run_flask():
 
 # --- CONFIGURAÇÕES DE SEGURANÇA ---
 TOKEN = os.getenv('TELEGRAM_TOKEN')
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-
 bot = TeleBot(TOKEN) if TOKEN else None
-
-# Configuração Gemini - Tentando nomes alternativos para compatibilidade
-GEMINI_MODELS = ["gemini-1.5-flash", "models/gemini-1.5-flash"]
 
 # Configurações Activesoft
 LOGIN_URL = "https://siga03.activesoft.com.br/login/"
@@ -38,17 +32,17 @@ USERNAME = "juciano"
 PASSWORD = "#Agape2025"
 
 MY_CLASSES = [
-    {"turma": "1ª SÉRIE - A", "disciplina": "LITERATURA", "id_turma": "389", "id_disciplina": "2", "disciplina_full": "Ensino Médio / 1ª Série / 2026 / 1ª SÉRIE - A - LITERATURA"},
-    {"turma": "1ª SÉRIE - A", "disciplina": "REDAÇÃO", "id_turma": "389", "id_disciplina": "3", "disciplina_full": "Ensino Médio / 1ª Série / 2026 / 1ª SÉRIE - A - REDAÇÃO"},
-    {"turma": "1ª SÉRIE - A", "disciplina": "CIÊNCIAS FORENSES", "id_turma": "389", "id_disciplina": "77", "disciplina_full": "Ensino Médio / 1ª Série / 2026 / 1ª SÉRIE - A - Ciências Forenses: Investigação Criminal"},
-    {"turma": "1ª SÉRIE - B", "disciplina": "LITERATURA", "id_turma": "390", "id_disciplina": "2", "disciplina_full": "Ensino Médio / 1ª Série / 2026 / 1ª SÉRIE - B - LITERATURA"},
-    {"turma": "1ª SÉRIE - B", "disciplina": "REDAÇÃO", "id_turma": "390", "id_disciplina": "3", "disciplina_full": "Ensino Médio / 1ª Série / 2026 / 1ª SÉRIE - B - REDAÇÃO"},
-    {"turma": "1ª SÉRIE - B", "disciplina": "CIÊNCIAS FORENSES", "id_turma": "390", "id_disciplina": "77", "disciplina_full": "Ensino Médio / 1ª Série / 2026 / 1ª SÉRIE - B - Ciências Forenses: Investigação Criminal"},
-    {"turma": "2ª SÉRIE - A", "disciplina": "LITERATURA", "id_turma": "387", "id_disciplina": "2", "disciplina_full": "Ensino Médio / 2ª Série / 2026 / 2ª SÉRIE - A - LITERATURA"},
-    {"turma": "2ª SÉRIE - A", "disciplina": "REDAÇÃO", "id_turma": "387", "id_disciplina": "3", "disciplina_full": "Ensino Médio / 2ª Série / 2026 / 2ª SÉRIE - A - REDAÇÃO"},
-    {"turma": "3ª SÉRIE - A", "disciplina": "LITERATURA", "id_turma": "388", "id_disciplina": "2", "disciplina_full": "Ensino Médio / 3ª Série / 2026 / 3ª SÉRIE - A - LITERATURA"},
-    {"turma": "3ª SÉRIE - A", "disciplina": "REDAÇÃO", "id_turma": "388", "id_disciplina": "3", "disciplina_full": "Ensino Médio / 3ª Série / 2026 / 3ª SÉRIE - A - REDAÇÃO"},
-    {"turma": "3ª SÉRIE - A", "disciplina": "CIÊNCIAS FORENSES", "id_turma": "388", "id_disciplina": "77", "disciplina_full": "Ensino Médio / 3ª Série / 2026 / 3ª SÉRIE - A - Ciências Forenses: Investigação Criminal"},
+    {"key": "1AL", "turma": "1ª SÉRIE - A", "disciplina": "LITERATURA", "id_turma": "389", "id_disciplina": "2", "disciplina_full": "Ensino Médio / 1ª Série / 2026 / 1ª SÉRIE - A - LITERATURA"},
+    {"key": "1AR", "turma": "1ª SÉRIE - A", "disciplina": "REDAÇÃO", "id_turma": "389", "id_disciplina": "3", "disciplina_full": "Ensino Médio / 1ª Série / 2026 / 1ª SÉRIE - A - REDAÇÃO"},
+    {"key": "1AC", "turma": "1ª SÉRIE - A", "disciplina": "CIÊNCIAS FORENSES", "id_turma": "389", "id_disciplina": "77", "disciplina_full": "Ensino Médio / 1ª Série / 2026 / 1ª SÉRIE - A - Ciências Forenses: Investigação Criminal"},
+    {"key": "1BL", "turma": "1ª SÉRIE - B", "disciplina": "LITERATURA", "id_turma": "390", "id_disciplina": "2", "disciplina_full": "Ensino Médio / 1ª Série / 2026 / 1ª SÉRIE - B - LITERATURA"},
+    {"key": "1BR", "turma": "1ª SÉRIE - B", "disciplina": "REDAÇÃO", "id_turma": "390", "id_disciplina": "3", "disciplina_full": "Ensino Médio / 1ª Série / 2026 / 1ª SÉRIE - B - REDAÇÃO"},
+    {"key": "1BC", "turma": "1ª SÉRIE - B", "disciplina": "CIÊNCIAS FORENSES", "id_turma": "390", "id_disciplina": "77", "disciplina_full": "Ensino Médio / 1ª Série / 2026 / 1ª SÉRIE - B - Ciências Forenses: Investigação Criminal"},
+    {"key": "2AL", "turma": "2ª SÉRIE - A", "disciplina": "LITERATURA", "id_turma": "387", "id_disciplina": "2", "disciplina_full": "Ensino Médio / 2ª Série / 2026 / 2ª SÉRIE - A - LITERATURA"},
+    {"key": "2AR", "turma": "2ª SÉRIE - A", "disciplina": "REDAÇÃO", "id_turma": "387", "id_disciplina": "3", "disciplina_full": "Ensino Médio / 2ª Série / 2026 / 2ª SÉRIE - A - REDAÇÃO"},
+    {"key": "3AL", "turma": "3ª SÉRIE - A", "disciplina": "LITERATURA", "id_turma": "388", "id_disciplina": "2", "disciplina_full": "Ensino Médio / 3ª Série / 2026 / 3ª SÉRIE - A - LITERATURA"},
+    {"key": "3AR", "turma": "3ª SÉRIE - A", "disciplina": "REDAÇÃO", "id_turma": "388", "id_disciplina": "3", "disciplina_full": "Ensino Médio / 3ª Série / 2026 / 3ª SÉRIE - A - REDAÇÃO"},
+    {"key": "3AC", "turma": "3ª SÉRIE - A", "disciplina": "CIÊNCIAS FORENSES", "id_turma": "388", "id_disciplina": "77", "disciplina_full": "Ensino Médio / 3ª Série / 2026 / 3ª SÉRIE - A - Ciências Forenses: Investigação Criminal"},
 ]
 
 user_state = {}
@@ -69,43 +63,61 @@ def get_session():
         print(f"Erro login: {e}")
         return None
 
-def clean_json_response(text):
-    text = re.sub(r'```json\s*', '', text)
-    text = re.sub(r'```\s*', '', text)
-    return text.strip()
-
-def call_gemini(prompt, chat_id=None):
-    if not GEMINI_API_KEY: return None
+def parse_fast_command(text):
+    # Padrão: 1A Lit Conteudo / Tarefa
+    # Ou: 1A Red Conteudo / Tarefa
+    text = text.replace("registra", "").replace("aula de hoje na", "").replace("aula de hoje no", "").strip()
     
-    last_error = ""
-    for model in GEMINI_MODELS:
-        # Tentar v1beta primeiro pois é mais comum suportar JSON Mode
-        for version in ["v1beta", "v1"]:
-            url = f"https://generativelanguage.googleapis.com/{version}/{model}:generateContent?key={GEMINI_API_KEY}"
-            payload = {
-                "contents": [{"parts": [{"text": prompt + "\nRESPONDA APENAS EM FORMATO JSON PURO, SEM TEXTO ADICIONAL."}]}]
-            }
-            try:
-                res = requests.post(url, json=payload, timeout=25)
-                res_json = res.json()
-                if 'candidates' in res_json:
-                    raw_text = res_json['candidates'][0]['content']['parts'][0]['text']
-                    return clean_json_response(raw_text)
-                else:
-                    last_error = f"{model} ({version}): {res_json.get('error', {}).get('message', 'Erro')}"
-            except Exception as e:
-                last_error = str(e)
-                continue
+    # Identificar Turma e Disciplina
+    match_class = re.search(r'([123])\s*([AB])', text, re.I)
+    if not match_class: return None
+    serie = match_class.group(1)
+    turma = match_class.group(2).upper()
     
-    if chat_id:
-        bot.send_message(chat_id, f"❌ Falha na IA após várias tentativas:\n{last_error}")
-    return None
+    disc_key = ""
+    if "lit" in text.lower(): disc_key = "L"
+    elif "red" in text.lower(): disc_key = "R"
+    elif "fore" in text.lower() or "cien" in text.lower(): disc_key = "C"
+    
+    final_key = f"{serie}{turma}{disc_key}"
+    selected_class = next((c for c in MY_CLASSES if c['key'] == final_key), None)
+    if not selected_class: return None
+    
+    # Extrair Conteúdo e Tarefa (separados por 'tarefa' ou '/')
+    content_part = text
+    # Limpar a parte da turma/disciplina do texto
+    content_part = re.sub(r'[123]\s*[AB]', '', content_part, flags=re.I)
+    content_part = re.sub(r'(lit|red|fore|cien)[a-z]*', '', content_part, flags=re.I)
+    content_part = content_part.replace("sobre", "").strip()
+    
+    tarefa = ""
+    if "tarefa" in content_part.lower():
+        parts = re.split(r'tarefa', content_part, flags=re.I)
+        conteudo = parts[0].strip()
+        tarefa = parts[1].strip()
+    elif "/" in content_part:
+        parts = content_part.split("/")
+        conteudo = parts[0].strip()
+        tarefa = parts[1].strip()
+    else:
+        conteudo = content_part.strip()
+        
+    return {
+        'class': selected_class,
+        'data': datetime.now().strftime("%d/%m/%Y"),
+        'conteudo': conteudo,
+        'tarefa': tarefa,
+        'bimestre': {"label": "2º Bimestre", "id": "9220"} # Padrão atual
+    }
 
 if bot:
     @bot.message_handler(commands=['start'])
     def start_cmd(message):
-        bot.send_message(message.chat.id, "👋 Professor Juciano! Versão 8.6 Ativa.\n\n"
-                                         "Tente: *'Registra aula de hoje na 1A de Literatura sobre Barroco'*")
+        bot.send_message(message.chat.id, "🚀 **Bot Professor Juciano v9.0 (Ultra Rápido)**\n\n"
+                                         "Agora sem IA para ser infalível! Basta mandar assim:\n\n"
+                                         "`1A Lit Trovadorismo tarefa ler livro`\n"
+                                         "`2A Red Coesão / Exercícios pág 10`\n\n"
+                                         "Ou use /registrar para o menu passo a passo.")
 
     @bot.message_handler(commands=['registrar'])
     def manual_registrar(message):
@@ -145,29 +157,39 @@ if bot:
         user_state[chat_id]['step'] = 'data'
 
     @bot.message_handler(func=lambda message: True)
-    def handle_nlp(message):
+    def handle_fast_mode(message):
         chat_id = message.chat.id
+        
+        # Se estiver no fluxo manual
         if chat_id in user_state and 'step' in user_state[chat_id]:
             if user_state[chat_id]['step'] == 'data': get_date(message); return
             elif user_state[chat_id]['step'] == 'manual_content': manual_content(message); return
             elif user_state[chat_id]['step'] == 'manual_task': manual_task(message); return
+            elif user_state[chat_id]['step'] == 'final_confirm': finalize_from_button(message); return
 
-        bot.send_chat_action(chat_id, 'typing')
-        hoje = datetime.now()
-        prompt = (f"Analise: '{message.text}'. Hoje: {hoje.strftime('%d/%m/%Y')}.\n"
-                  "Turmas (class_idx):\n" + "\n".join([f"{i}: {c['turma']} - {c['disciplina']}" for i, c in enumerate(MY_CLASSES)]) +
-                  "\nRetorne JSON: {'class_idx': int, 'data': 'string', 'bim_idx': int, 'registro': 'string', 'tarefa': 'string'}")
-        ai_response = call_gemini(prompt, chat_id)
-        if not ai_response: return
-        try:
-            data = json.loads(ai_response)
-            user_state[chat_id] = {'selected_class': MY_CLASSES[int(data['class_idx'])], 'data': data['data'], 'selected_bim': [{"label": "1º Bimestre", "id": "9219"}, {"label": "2º Bimestre", "id": "9220"}, {"label": "3º Bimestre", "id": "9221"}, {"label": "4º Bimestre", "id": "9222"}][int(data['bim_idx'])], 'conteudo': data['registro'], 'tarefa': data['tarefa']}
-            summary = f"🧠 **Assistente**\n\n🏫 **Turma:** {user_state[chat_id]['selected_class']['turma']}\n📚 **Disc:** {user_state[chat_id]['selected_class']['disciplina']}\n📅 **Data:** {user_state[chat_id]['data']}\n📖 **Reg:** {user_state[chat_id]['conteudo']}\n📝 **Tarefa:** {user_state[chat_id]['tarefa']}\n\nDeseja confirmar?"
+        # Modo Rápido (Lógica Direta)
+        res = parse_fast_command(message.text)
+        if res:
+            user_state[chat_id] = {
+                'selected_class': res['class'],
+                'data': res['data'],
+                'selected_bim': res['bimestre'],
+                'conteudo': res['conteudo'],
+                'tarefa': res['tarefa'],
+                'step': 'final_confirm'
+            }
+            summary = (f"📝 **Resumo do Registro**\n\n"
+                       f"🏫 **Turma:** {res['class']['turma']}\n"
+                       f"📚 **Disc:** {res['class']['disciplina']}\n"
+                       f"📅 **Data:** {res['data']}\n"
+                       f"📖 **Conteúdo:** {res['conteudo']}\n"
+                       f"📝 **Tarefa:** {res['tarefa']}\n\n"
+                       f"Confirma o envio?")
             markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
             markup.add('Confirmar Envio', 'Cancelar')
             bot.send_message(chat_id, summary, reply_markup=markup)
-            user_state[chat_id]['step'] = 'final_confirm'
-        except Exception: bot.send_message(chat_id, "😅 Não entendi. Tente ser mais específico.")
+        else:
+            bot.send_message(chat_id, "😅 Não entendi o comando rápido. Tente:\n`1A Lit Trovadorismo tarefa ler livro` ou use /registrar")
 
     def get_date(message):
         chat_id = message.chat.id
@@ -188,28 +210,38 @@ if bot:
 
     def finalize_summary(chat_id):
         state = user_state[chat_id]
-        summary = f"🚀 **Confirmar?**\n\n📅 {state['data']}\n🏫 {state['selected_class']['turma']}\n📖 {state['conteudo'][:100]}...\n📝 {state['tarefa']}"
+        summary = f"🚀 **Confirmar?**\n\n📅 {state['data']}\n🏫 {state['selected_class']['turma']}\n📖 {state['conteudo']}\n📝 {state['tarefa']}"
         markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
         markup.add('Confirmar Envio', 'Cancelar')
         bot.send_message(chat_id, summary, reply_markup=markup)
         user_state[chat_id]['step'] = 'final_confirm'
 
-    @bot.message_handler(func=lambda message: message.text in ['Confirmar Envio', 'Cancelar'])
-    def finalize(message):
+    def finalize_from_button(message):
         chat_id = message.chat.id
         if message.text == 'Cancelar':
             bot.send_message(chat_id, "Cancelado.", reply_markup=types.ReplyKeyboardRemove())
             user_state.pop(chat_id, None); return
-        bot.send_message(chat_id, "Enviando...", reply_markup=types.ReplyKeyboardRemove())
-        try:
-            state = user_state[chat_id]
-            session = get_session()
-            payload = {"AulaSelecionada": "0", "StRegistroEmEdicao": "0", "DataAulaNovo": state['data'], "ConteudoMinistradoNovo": state['conteudo'], "TarefaNovo": state['tarefa'], "btnGravarNovo": "Gravar", "IdDiario": state['selected_bim']['id'], "Disciplina": state['selected_class']['disciplina_full'], "DescricaoDiario": f"Diário {state['selected_bim']['label']}", "IdDisciplina": state['selected_class']['id_disciplina'], "IdTurma": state['selected_class']['id_turma']}
-            headers = {"Referer": f"https://app52.activesoft.com.br/sistema/sistema.1065614/TelasSIGA/Diario/RegistroAulas.asp?IdDiario={state['selected_bim']['id']}", "Origin": "https://app52.activesoft.com.br"}
-            res = session.post(GRAVAR_URL_BASE, data=payload, headers=headers, timeout=20)
-            bot.send_message(chat_id, "✅ Registro concluído!" if res.status_code == 200 else f"❌ Erro {res.status_code}")
-        except Exception as e: bot.send_message(chat_id, f"❌ Erro: {str(e)}")
-        user_state.pop(chat_id, None)
+        if message.text == 'Confirmar Envio':
+            bot.send_message(chat_id, "Enviando para o Activesoft...", reply_markup=types.ReplyKeyboardRemove())
+            try:
+                state = user_state[chat_id]
+                session = get_session()
+                payload = {
+                    "AulaSelecionada": "0", "StRegistroEmEdicao": "0", "DataAulaNovo": state['data'],
+                    "ConteudoMinistradoNovo": state['conteudo'], "TarefaNovo": state['tarefa'],
+                    "btnGravarNovo": "Gravar", "IdDiario": state['selected_bim']['id'],
+                    "Disciplina": state['selected_class']['disciplina_full'], "DescricaoDiario": f"Diário {state['selected_bim']['label']}",
+                    "IdDisciplina": state['selected_class']['id_disciplina'], "IdTurma": state['selected_class']['id_turma']
+                }
+                headers = {"Referer": f"https://app52.activesoft.com.br/sistema/sistema.1065614/TelasSIGA/Diario/RegistroAulas.asp?IdDiario={state['selected_bim']['id']}", "Origin": "https://app52.activesoft.com.br"}
+                res = session.post(GRAVAR_URL_BASE, data=payload, headers=headers, timeout=20)
+                if res.status_code == 200:
+                    bot.send_message(chat_id, "✅ Registro concluído com sucesso!")
+                else:
+                    bot.send_message(chat_id, f"❌ Erro no Activesoft: Status {res.status_code}")
+            except Exception as e:
+                bot.send_message(chat_id, f"❌ Erro técnico: {str(e)}")
+            user_state.pop(chat_id, None)
 
     threading.Thread(target=run_flask).start()
     bot.infinity_polling()
