@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAE IA — Prof. Juciano</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; height: 100vh; display: flex; flex-direction: column; }
+
+        header {
+            background: linear-gradient(135deg, #1e40af, #3b82f6);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+        }
+        header .title { font-size: 1.1rem; font-weight: 700; }
+        header .subtitle { font-size: 0.78rem; opacity: 0.75; margin-top: 2px; }
+        header button {
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.82rem;
+        }
+        header button:hover { background: rgba(255,255,255,0.25); }
+
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .msg { display: flex; gap: 12px; max-width: 820px; }
+        .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+
+        .avatar {
+            width: 36px; height: 36px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1rem; flex-shrink: 0;
+        }
+        .msg.user .avatar { background: #3b82f6; }
+        .msg.ai .avatar { background: #7c3aed; }
+
+        .bubble {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 12px 16px;
+            line-height: 1.6;
+            font-size: 0.93rem;
+            max-width: 680px;
+            border: 1px solid #334155;
+            white-space: pre-wrap;
+        }
+        .msg.user .bubble { background: #1e40af; border-color: #3b82f6; }
+
+        .bubble.thinking {
+            color: #64748b;
+            font-style: italic;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+        footer {
+            padding: 16px 24px;
+            background: #0f172a;
+            border-top: 1px solid #1e293b;
+        }
+        .input-row { display: flex; gap: 10px; }
+        .input-row textarea {
+            flex: 1;
+            background: #1e293b;
+            border: 1px solid #334155;
+            color: #e2e8f0;
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-size: 0.93rem;
+            resize: none;
+            height: 48px;
+            font-family: inherit;
+            line-height: 1.5;
+        }
+        .input-row textarea:focus { outline: none; border-color: #3b82f6; }
+        .input-row textarea::placeholder { color: #475569; }
+        .input-row button {
+            background: #3b82f6;
+            border: none;
+            color: white;
+            width: 48px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+        .input-row button:hover { background: #2563eb; }
+        .input-row button:disabled { background: #334155; cursor: not-allowed; }
+
+        .hint { font-size: 0.75rem; color: #475569; margin-top: 8px; text-align: center; }
+
+        .welcome {
+            text-align: center;
+            padding: 40px 20px;
+            color: #475569;
+        }
+        .welcome h2 { font-size: 1.3rem; color: #94a3b8; margin-bottom: 12px; }
+        .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 20px; }
+        .suggestion {
+            background: #1e293b;
+            border: 1px solid #334155;
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 0.83rem;
+            cursor: pointer;
+            color: #94a3b8;
+        }
+        .suggestion:hover { border-color: #3b82f6; color: #93c5fd; }
+    </style>
+</head>
+<body>
+    <header>
+        <div>
+            <div class="title">SAE Digital IA</div>
+            <div class="subtitle">Assistente inteligente para trilhas e relatórios</div>
+        </div>
+        <button onclick="resetChat()">🔄 Nova conversa</button>
+    </header>
+
+    <div id="messages">
+        <div class="welcome" id="welcome">
+            <h2>👋 Olá, Prof. Juciano!</h2>
+            <p>Faça qualquer pergunta sobre as trilhas e alunos no SAE.<br>A IA vai navegar pelo site e trazer a resposta pra você.</p>
+            <div class="suggestions">
+                <div class="suggestion" onclick="suggest(this)">Quais alunos completaram a trilha?</div>
+                <div class="suggestion" onclick="suggest(this)">Qual é a média de acertos da turma?</div>
+                <div class="suggestion" onclick="suggest(this)">Quem ainda não fez a atividade?</div>
+                <div class="suggestion" onclick="suggest(this)">Mostre o relatório completo da seção</div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="input-row">
+            <textarea id="input" placeholder="Pergunte qualquer coisa sobre o SAE... (Enter para enviar)" onkeydown="handleKey(event)"></textarea>
+            <button id="send-btn" onclick="sendMessage()">➤</button>
+        </div>
+        <div class="hint">A IA faz login automaticamente e navega pelo SAE para responder</div>
+    </footer>
+
+    <script>
+        function suggest(el) {
+            document.getElementById('input').value = el.textContent;
+            sendMessage();
+        }
+
+        function handleKey(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        }
+
+        function addMessage(role, text, isThinking=false) {
+            const welcome = document.getElementById('welcome');
+            if (welcome) welcome.remove();
+
+            const msgs = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = `msg ${role}`;
+
+            const avatar = document.createElement('div');
+            avatar.className = 'avatar';
+            avatar.textContent = role === 'user' ? '👤' : '🤖';
+
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble' + (isThinking ? ' thinking' : '');
+            bubble.textContent = text;
+
+            div.appendChild(avatar);
+            div.appendChild(bubble);
+            msgs.appendChild(div);
+            msgs.scrollTop = msgs.scrollHeight;
+            return bubble;
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('input');
+            const btn = document.getElementById('send-btn');
+            const text = input.value.trim();
+            if (!text) return;
+
+            input.value = '';
+            addMessage('user', text);
+
+            btn.disabled = true;
+            const thinkingBubble = addMessage('ai', '⏳ Navegando no SAE... pode levar alguns segundos.', true);
+
+            try {
+                const res = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                });
+                const data = await res.json();
+
+                thinkingBubble.classList.remove('thinking');
+                if (data.error) {
+                    thinkingBubble.textContent = '❌ Erro: ' + data.error;
+                } else {
+                    thinkingBubble.textContent = data.response;
+                }
+            } catch (e) {
+                thinkingBubble.classList.remove('thinking');
+                thinkingBubble.textContent = '❌ Erro de conexão: ' + e.message;
+            } finally {
+                btn.disabled = false;
+                document.getElementById('messages').scrollTop = 99999;
+            }
+        }
+
+        async function resetChat() {
+            await fetch('/reset', { method: 'POST' });
+            location.reload();
+        }
+    </script>
+</body>
+</html>
