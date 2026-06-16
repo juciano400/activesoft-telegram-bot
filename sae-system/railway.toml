@@ -1,0 +1,8 @@
+[build]
+dockerfilePath = "sae-system/Dockerfile"
+
+[deploy]
+startCommand = "gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1"
+healthcheckPath = "/"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"

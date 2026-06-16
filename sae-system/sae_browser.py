@@ -5,7 +5,10 @@ Mantém uma sessão logada e expõe ações para o agente de IA.
 import os
 from playwright.sync_api import sync_playwright, Page, Browser
 
-CHROMIUM_PATH = os.getenv("CHROMIUM_PATH", "/opt/pw-browsers/chromium-1194/chrome-linux/chrome")
+# No Railway o Playwright já sabe onde está o Chromium.
+# Localmente pode-se definir CHROMIUM_PATH se necessário.
+CHROMIUM_PATH = os.getenv("CHROMIUM_PATH", "")  # vazio = deixa o Playwright decidir
+
 SAE_EMAIL = os.getenv("SAE_EMAIL", "")
 SAE_PASSWORD = os.getenv("SAE_PASSWORD", "")
 LOGIN_URL = "https://app.sae.digital/login"
@@ -20,7 +23,12 @@ def _launch():
     _pw = sync_playwright().start()
     launch_kwargs = {
         "headless": True,
-        "args": ["--ignore-certificate-errors", "--no-sandbox", "--disable-setuid-sandbox"],
+        "args": [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+        ],
     }
     if CHROMIUM_PATH:
         launch_kwargs["executable_path"] = CHROMIUM_PATH
@@ -38,27 +46,27 @@ def get_page() -> Page:
 
 def login() -> str:
     page = get_page()
-    page.goto(LOGIN_URL, timeout=20000)
-    page.wait_for_load_state("networkidle", timeout=15000)
+    page.goto(LOGIN_URL, timeout=30000)
+    page.wait_for_load_state("networkidle", timeout=20000)
 
     page.fill('input[type="email"]', SAE_EMAIL)
     page.fill('input[type="password"]', SAE_PASSWORD)
     page.click('button[type="submit"]')
 
     try:
-        page.wait_for_url("**/painel/**", timeout=15000)
+        page.wait_for_url("**/painel/**", timeout=20000)
     except Exception:
         page.wait_for_load_state("networkidle", timeout=10000)
 
     if "login" in page.url:
-        return "ERRO: Login falhou. Verifique credenciais."
+        return "ERRO: Login falhou. Verifique as credenciais."
     return f"Login OK. URL atual: {page.url}"
 
 
 def navigate(url: str) -> str:
     page = get_page()
-    page.goto(url, timeout=20000)
-    page.wait_for_load_state("networkidle", timeout=15000)
+    page.goto(url, timeout=30000)
+    page.wait_for_load_state("networkidle", timeout=20000)
     return f"Navegou para: {page.url}"
 
 
@@ -75,8 +83,8 @@ def get_page_url() -> str:
 def click_element(selector: str) -> str:
     page = get_page()
     try:
-        page.click(selector, timeout=5000)
-        page.wait_for_load_state("networkidle", timeout=8000)
+        page.click(selector, timeout=8000)
+        page.wait_for_load_state("networkidle", timeout=10000)
         return f"Clicou em '{selector}'. URL: {page.url}"
     except Exception as e:
         return f"Erro ao clicar: {str(e)}"
@@ -85,7 +93,7 @@ def click_element(selector: str) -> str:
 def fill_input(selector: str, value: str) -> str:
     page = get_page()
     try:
-        page.fill(selector, value, timeout=5000)
+        page.fill(selector, value, timeout=8000)
         return f"Preencheu '{selector}' com '{value}'"
     except Exception as e:
         return f"Erro ao preencher: {str(e)}"
